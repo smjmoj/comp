@@ -74,4 +74,5 @@ components:
 
 ```
 
+
 This script writes the result to execution_plan.yaml and shows it on the terminal.
