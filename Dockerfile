@@ -4,6 +4,6 @@ WORKDIR /app
 
 COPY grouped_sort.py .
 
-RUN pip install networkx pyyaml
+RUN pip install networkx pyyaml python-hcl2
 
 ENTRYPOINT ["python", "grouped_sort.py"]

@@ -2,15 +2,14 @@
 
 set -euo pipefail
 
-# === CONFIG ===
-COMPONENT_DIR="./project_dir/components"
+COMPONENT_DIR="$(pwd)/components"
 USE_DOCKER=${USE_DOCKER:-false}
 DOCKER_IMAGE_NAME="tf-dep-planner"
 DOCKERFILE="./Dockerfile"
 PYTHON_SCRIPT="grouped_sort.py"
 YAML_FILE=""
 
-# === PARSE ARGS ===
+# Parse args
 ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -25,13 +24,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# === Resolve components from YAML or CLI args or filesystem ===
+# Determine component list
 if [[ -n "$YAML_FILE" ]]; then
   if ! command -v yq &> /dev/null; then
-    echo "Error: 'yq' is required to parse YAML. Install it via 'brew install yq' or 'sudo snap install yq'"
+    echo "Error: 'yq' required for --yaml"
     exit 1
   fi
-  echo "[*] Reading component list from YAML file: $YAML_FILE"
+  echo "[*] Reading components from $YAML_FILE"
   COMPONENTS=($(yq '.components[]' "$YAML_FILE"))
 elif [[ ${#ARGS[@]} -gt 0 ]]; then
   COMPONENTS=("${ARGS[@]}")
@@ -50,21 +49,19 @@ for name in "${COMPONENTS[@]}"; do
 done
 
 if [[ ${#COMPONENT_PATHS[@]} -eq 0 ]]; then
-  echo "No valid components found. Exiting."
+  echo "No valid components found"
   exit 1
 fi
 
-# === Run planner ===
+# Run dependency planner
 if [[ "$USE_DOCKER" == "true" ]]; then
-  echo "[*] Running inside Docker"
-  if ! docker image inspect "$DOCKER_IMAGE_NAME" > /dev/null 2>&1; then
-    echo "[*] Docker image '$DOCKER_IMAGE_NAME' not found. Building it now..."
+  if ! docker image inspect "$DOCKER_IMAGE_NAME" &> /dev/null; then
+    echo "[*] Building Docker image $DOCKER_IMAGE_NAME..."
     docker build -t "$DOCKER_IMAGE_NAME" -f "$DOCKERFILE" .
   fi
-
   docker run --rm -v "$(pwd):/mnt" "$DOCKER_IMAGE_NAME" \
     "${COMPONENT_PATHS[@]/#/.\/}" | tee execution_plan.yaml
 else
-  echo "[*] Running locally via Python"
+  echo "[*] Running locally"
   python "$PYTHON_SCRIPT" "${COMPONENT_PATHS[@]}" | tee execution_plan.yaml
 fi
