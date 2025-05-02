@@ -6,11 +6,35 @@ set -euo pipefail
 COMPONENT_DIR="./project_dir/components"
 USE_DOCKER=${USE_DOCKER:-false}
 DOCKER_IMAGE_NAME="tf-dep-planner"
+DOCKERFILE="./Dockerfile"
 PYTHON_SCRIPT="grouped_sort.py"
+YAML_FILE=""
 
-# === Resolve components to paths ===
-if [[ $# -gt 0 ]]; then
-  COMPONENTS=("$@")
+# === PARSE ARGS ===
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --yaml)
+      YAML_FILE="$2"
+      shift 2
+      ;;
+    *)
+      ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# === Resolve components from YAML or CLI args or filesystem ===
+if [[ -n "$YAML_FILE" ]]; then
+  if ! command -v yq &> /dev/null; then
+    echo "Error: 'yq' is required to parse YAML. Install it via 'brew install yq' or 'sudo snap install yq'"
+    exit 1
+  fi
+  echo "[*] Reading component list from YAML file: $YAML_FILE"
+  COMPONENTS=($(yq '.components[]' "$YAML_FILE"))
+elif [[ ${#ARGS[@]} -gt 0 ]]; then
+  COMPONENTS=("${ARGS[@]}")
 else
   COMPONENTS=($(ls -1 "$COMPONENT_DIR"))
 fi
@@ -33,6 +57,11 @@ fi
 # === Run planner ===
 if [[ "$USE_DOCKER" == "true" ]]; then
   echo "[*] Running inside Docker"
+  if ! docker image inspect "$DOCKER_IMAGE_NAME" > /dev/null 2>&1; then
+    echo "[*] Docker image '$DOCKER_IMAGE_NAME' not found. Building it now..."
+    docker build -t "$DOCKER_IMAGE_NAME" -f "$DOCKERFILE" .
+  fi
+
   docker run --rm -v "$(pwd):/mnt" "$DOCKER_IMAGE_NAME" \
     "${COMPONENT_PATHS[@]/#/.\/}" | tee execution_plan.yaml
 else

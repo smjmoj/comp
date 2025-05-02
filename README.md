@@ -44,11 +44,34 @@ execution_plan:
 ./plan_components.sh vpc bastion app
 ```
 
+### Run with YAML Input, Local:
+
+```shell
+./plan_components.sh --yaml config.yaml
+```
+
 
 ### Run with Docker:
 
 ```shell
 USE_DOCKER=true ./plan_components.sh
+```
+
+### Run with YAML + Docker:
+
+```shell
+USE_DOCKER=true ./plan_components.sh --yaml config.yaml
+```
+
+### Example YAML File (components.yaml)
+
+```yaml
+components:
+  - vpc
+  - dns
+  - bastion
+  - app
+
 ```
 
 This script writes the result to execution_plan.yaml and shows it on the terminal.
