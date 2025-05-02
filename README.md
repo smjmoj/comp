@@ -50,6 +50,12 @@ execution_plan:
 ./plan_components.sh --yaml config.yaml
 ```
 
+###  Run with YAML Input, custom path, Local:
+
+```shell
+./plan_components.sh --component-dir ./custom/components --yaml components.yaml
+```
+
 
 ### Run with Docker:
 
@@ -61,6 +67,12 @@ USE_DOCKER=true ./plan_components.sh
 
 ```shell
 USE_DOCKER=true ./plan_components.sh --yaml config.yaml
+```
+
+### Run with YAML + Docker + custom path:
+
+```shell
+USE_DOCKER=true ./plan_components.sh --component-dir ./custom/components --yaml components.yaml
 ```
 
 ### Example YAML File (components.yaml)

@@ -5,31 +5,41 @@ import hcl2
 import networkx as nx
 from collections import deque
 
-def extract_module_deps(component_path):
+def extract_remote_state_deps(component_path, verbose=False):
     deps = set()
     for root, _, files in os.walk(component_path):
         for file in files:
             if file.endswith(".tf"):
+                full_path = os.path.join(root, file)
                 try:
-                    with open(os.path.join(root, file), 'r') as f:
+                    with open(full_path, 'r') as f:
                         parsed = hcl2.load(f)
-                        if "module" in parsed:
-                            for mod_name in parsed["module"].keys():
-                                deps.add(mod_name)
-                except Exception:
-                    continue
+                        data_blocks = parsed.get("data", {}).get("terraform_remote_state", {})
+                        for name, block in data_blocks.items():
+                            config = block.get("config", {})
+                            key = config.get("key")
+                            if isinstance(key, str) and key.endswith("/terraform.state"):
+                                dep_name = key.split("/")[0]
+                                deps.add(dep_name)
+                                if verbose:
+                                    print(f"[DEBUG] Found dependency in {component_path}: {dep_name} via key='{key}'")
+                except Exception as e:
+                    if verbose:
+                        print(f"[WARN] Failed to parse {full_path}: {e}")
     return deps
 
-def build_dependency_graph(component_paths):
+def build_dependency_graph(component_paths, verbose=False):
     name_to_path = {os.path.basename(path.rstrip("/")): path for path in component_paths}
     graph = nx.DiGraph()
 
     for name, path in name_to_path.items():
         graph.add_node(name)
-        deps = extract_module_deps(path)
+        deps = extract_remote_state_deps(path, verbose=verbose)
         for dep in deps:
             if dep in name_to_path:
                 graph.add_edge(dep, name)
+            elif verbose:
+                print(f"[WARN] Ignored unknown dependency '{dep}' in '{name}'")
 
     return graph
 
@@ -61,11 +71,13 @@ def topological_grouping(graph):
     return layers
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: grouped_sort.py <component_path1> <component_path2> ...")
-        sys.exit(1)
+    import argparse
 
-    paths = sys.argv[1:]
-    graph = build_dependency_graph(paths)
+    parser = argparse.ArgumentParser(description="Group Terraform components by dependency order.")
+    parser.add_argument("paths", nargs="+", help="Component paths (e.g. ./components/vpc)")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug output")
+
+    args = parser.parse_args()
+    graph = build_dependency_graph(args.paths, verbose=args.verbose)
     execution_layers = topological_grouping(graph)
     print(yaml.dump({"execution_plan": execution_layers}, sort_keys=False))

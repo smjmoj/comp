@@ -2,19 +2,24 @@
 
 set -euo pipefail
 
-COMPONENT_DIR="$(pwd)/components"
+# === Default Config ===
+COMPONENT_DIR="./project_dir/components"
 USE_DOCKER=${USE_DOCKER:-false}
 DOCKER_IMAGE_NAME="tf-dep-planner"
 DOCKERFILE="./Dockerfile"
 PYTHON_SCRIPT="grouped_sort.py"
 YAML_FILE=""
 
-# Parse args
+# === Parse arguments ===
 ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --yaml)
       YAML_FILE="$2"
+      shift 2
+      ;;
+    --component-dir)
+      COMPONENT_DIR="$2"
       shift 2
       ;;
     *)
@@ -24,10 +29,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Determine component list
+# === Get component names ===
 if [[ -n "$YAML_FILE" ]]; then
   if ! command -v yq &> /dev/null; then
-    echo "Error: 'yq' required for --yaml"
+    echo "Error: 'yq' is required for --yaml"
     exit 1
   fi
   echo "[*] Reading components from $YAML_FILE"
@@ -38,6 +43,7 @@ else
   COMPONENTS=($(ls -1 "$COMPONENT_DIR"))
 fi
 
+# === Resolve paths ===
 COMPONENT_PATHS=()
 for name in "${COMPONENTS[@]}"; do
   full_path="$COMPONENT_DIR/$name"
@@ -53,7 +59,7 @@ if [[ ${#COMPONENT_PATHS[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# Run dependency planner
+# === Execute Python script ===
 if [[ "$USE_DOCKER" == "true" ]]; then
   if ! docker image inspect "$DOCKER_IMAGE_NAME" &> /dev/null; then
     echo "[*] Building Docker image $DOCKER_IMAGE_NAME..."
