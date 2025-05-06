@@ -113,7 +113,7 @@ def main():
         execution_plan.append(group)  # Group itself is kept as a list of components
 
     print()
-    print(yaml.dump({"execution_plan": plan}, sort_keys=False))
+    print(yaml.dump({"execution_plan": execution_plan}, sort_keys=False))
 
 if __name__ == "__main__":
     main()
