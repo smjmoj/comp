@@ -1,4 +1,5 @@
 import os
+import argparse
 import hcl2
 import yaml
 import networkx as nx
@@ -12,84 +13,77 @@ def extract_remote_state_deps(component_path, verbose=False):
                 try:
                     with open(full_path, 'r') as f:
                         parsed = hcl2.load(f)
-                        blocks = parsed if isinstance(parsed, list) else [parsed]
-
-                        for block in blocks:
-                            if not isinstance(block, dict):
-                                continue
-                            if "data" in block and "terraform_remote_state" in block["data"]:
-                                tfrs_blocks = block["data"]["terraform_remote_state"]
-                                for _, attrs in tfrs_blocks.items():
-                                    if isinstance(attrs, dict):
-                                        config = attrs.get("config", {})
-                                        key = config.get("key") if isinstance(config, dict) else None
-                                        if isinstance(key, str) and key.endswith("/terraform.state"):
-                                            dep_name = key.split("/", 1)[0]
-                                            deps.add(dep_name)
-                                            if verbose:
-                                                print(f"[DEBUG] {os.path.basename(component_path)} depends on {dep_name} (from key = '{key}')")
-
+                        if not isinstance(parsed, dict):
+                            continue
+                        data_blocks = parsed.get("data", {})
+                        trs_blocks = data_blocks.get("terraform_remote_state", {})
+                        for block_name, attrs in trs_blocks.items():
+                            config = attrs.get("config", {})
+                            key = config.get("key")
+                            if isinstance(key, str) and key.endswith("/terraform.state"):
+                                dep = key.split("/", 1)[0]
+                                deps.add(dep)
+                                if verbose:
+                                    print(f"[DEBUG] {os.path.basename(component_path)} depends on {dep} (from key = '{key}')")
                 except Exception as e:
                     if verbose:
-                        print(f"[WARN] Failed to parse {full_path}: {e}")
+                        print(f"[WARN] Could not parse {full_path}: {e}")
     return deps
 
-def build_dependency_graph(component_paths, verbose=False):
+def build_graph(component_paths, verbose=False):
     graph = nx.DiGraph()
-    components = {}
+    name_to_path = {}
 
     for path in component_paths:
         name = os.path.basename(os.path.normpath(path))
-        components[name] = path
+        name_to_path[name] = path
         graph.add_node(name)
 
-    for name, path in components.items():
-        deps = extract_remote_state_deps(path, verbose=verbose)
+    for name, path in name_to_path.items():
+        deps = extract_remote_state_deps(path, verbose)
         for dep in deps:
-            if dep in components:
+            if dep in name_to_path:
                 graph.add_edge(dep, name)
 
     return graph
 
-def topological_grouping(graph):
+def topological_groups(graph):
     from collections import defaultdict
 
-    in_degree = dict(graph.in_degree())
-    zero_in = sorted([n for n, deg in in_degree.items() if deg == 0])
-    grouped = []
+    in_deg = dict(graph.in_degree())
+    zero_deg = sorted([n for n, deg in in_deg.items() if deg == 0])
+    result = []
 
-    while zero_in:
-        grouped.append(zero_in)
+    while zero_deg:
+        result.append(zero_deg)
         next_zero = []
+        for node in zero_deg:
+            for child in sorted(graph.successors(node)):
+                in_deg[child] -= 1
+                if in_deg[child] == 0:
+                    next_zero.append(child)
+        zero_deg = next_zero
 
-        for node in zero_in:
-            for succ in sorted(graph.successors(node)):
-                in_degree[succ] -= 1
-                if in_degree[succ] == 0:
-                    next_zero.append(succ)
-
-        zero_in = sorted(next_zero)
-
-    if any(deg > 0 for deg in in_degree.values()):
+    if any(deg > 0 for deg in in_deg.values()):
         raise RuntimeError("Cycle detected")
+    return result
 
-    return grouped
-
-if __name__ == "__main__":
-    import argparse
-
+def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("paths", nargs="+", help="List of component directories")
-    parser.add_argument("--verbose", action="store_true", help="Enable debug output")
+    parser.add_argument("paths", nargs="+", help="Paths to component directories")
+    parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
-    graph = build_dependency_graph(args.paths, verbose=args.verbose)
+    graph = build_graph(args.paths, verbose=args.verbose)
 
     if args.verbose:
         print("\n[INFO] Graph edges:")
         for u, v in graph.edges:
             print(f"  {u} --> {v}")
 
-    execution_order = topological_grouping(graph)
+    plan = topological_groups(graph)
     print()
-    print(yaml.dump({"execution_plan": execution_order}, sort_keys=False))
+    print(yaml.dump({"execution_plan": plan}, sort_keys=False))
+
+if __name__ == "__main__":
+    main()
