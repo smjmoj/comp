@@ -106,17 +106,11 @@ def main():
             print(f"  {u} --> {v}")
 
     plan = topological_groups(graph)
-    print("DEBUG: Plan:", plan)
-
-    # This will maintain the group structure properly (as a list of lists)
-    execution_plan = []
-    for group in plan:
-        print("DEBUG: Execution Plan:", execution_plan)
-        execution_plan.append(group)  # Group itself is kept as a list of components
 
     print()
-    print("DEBUG: Execution Plan Groups:", plan)
-    print(yaml.dump({"execution_plan": execution_plan}, sort_keys=False))
+    execution_plan = [group for group in plan]
+
+    print(yaml.dump({"execution_plan": execution_plan}, sort_keys=False, default_flow_style=False))
 
 if __name__ == "__main__":
     main()
