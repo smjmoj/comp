@@ -59,31 +59,29 @@ def build_dependency_graph(component_paths, verbose=False):
     return graph
 
 def topological_grouping(graph):
-    in_degree = {node: 0 for node in graph}
-    for u in graph:
-        for v in graph.successors(u):
-            in_degree[v] += 1
+    from collections import defaultdict
 
-    queue = deque([n for n in graph if in_degree[n] == 0])
-    layers = []
+    in_degree = dict(graph.in_degree())
+    zero_in = [n for n, deg in in_degree.items() if deg == 0]
+    grouped = []
 
-    while queue:
-        layer = list(queue)
-        layers.append(sorted(layer))
-        next_queue = deque()
+    while zero_in:
+        grouped.append(sorted(zero_in))
+        next_zero_in = []
 
-        for node in layer:
-            for neighbor in graph.successors(node):
-                in_degree[neighbor] -= 1
-                if in_degree[neighbor] == 0:
-                    next_queue.append(neighbor)
+        for node in zero_in:
+            for succ in graph.successors(node):
+                in_degree[succ] -= 1
+                if in_degree[succ] == 0:
+                    next_zero_in.append(succ)
 
-        queue = next_queue
+        zero_in = next_zero_in
 
-    if any(in_degree[n] > 0 for n in in_degree):
-        raise RuntimeError("Cycle detected in component dependencies!")
+    if any(deg > 0 for deg in in_degree.values()):
+        raise RuntimeError("Cycle detected in dependencies.")
 
-    return layers
+    return grouped
+
 
 if __name__ == "__main__":
     import argparse
