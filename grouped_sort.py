@@ -14,19 +14,24 @@ def extract_remote_state_deps(component_path, verbose=False):
                 try:
                     with open(full_path, 'r') as f:
                         parsed = hcl2.load(f)
-                        data_blocks = parsed.get("data", {}).get("terraform_remote_state", {})
-                        for name, block in data_blocks.items():
-                            config = block.get("config", {})
-                            key = config.get("key")
-                            if isinstance(key, str) and key.endswith("/terraform.state"):
-                                dep_name = key.split("/")[0]
-                                deps.add(dep_name)
-                                if verbose:
-                                    print(f"[DEBUG] Found dependency in {component_path}: {dep_name} via key='{key}'")
+                        blocks = parsed if isinstance(parsed, list) else [parsed]
+                        for block in blocks:
+                            if isinstance(block, dict) and "data" in block:
+                                data_block = block["data"]
+                                if "terraform_remote_state" in data_block:
+                                    for name, state_block in data_block["terraform_remote_state"].items():
+                                        config = state_block.get("config", {})
+                                        key = config.get("key")
+                                        if isinstance(key, str) and key.endswith("/terraform.state"):
+                                            dep_name = key.split("/", 1)[0]
+                                            deps.add(dep_name)
+                                            if verbose:
+                                                print(f"[DEBUG] Found dependency in {component_path}: {dep_name} via key='{key}'")
                 except Exception as e:
                     if verbose:
                         print(f"[WARN] Failed to parse {full_path}: {e}")
     return deps
+
 
 def build_dependency_graph(component_paths, verbose=False):
     name_to_path = {os.path.basename(path.rstrip("/")): path for path in component_paths}
