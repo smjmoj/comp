@@ -1,40 +1,43 @@
 import os
-import argparse
 import hcl2
 import yaml
 import networkx as nx
+import argparse
 
 def extract_remote_state_deps(component_path, verbose=False):
     deps = set()
-    for root, _, files in os.walk(component_path):
-        for file in files:
-            if file.endswith(".tf"):
-                full_path = os.path.join(root, file)
-                try:
-                    with open(full_path, 'r') as f:
-                        parsed = hcl2.load(f)
-                        if not isinstance(parsed, dict):
-                            continue
-                        data_blocks = parsed.get("data", {})
-                        trs_blocks = data_blocks.get("terraform_remote_state", {})
-                        for block_name, attrs in trs_blocks.items():
-                            config = attrs.get("config", {})
-                            key = config.get("key")
+    for filename in os.listdir(component_path):
+        if not filename.endswith(".tf"):
+            continue
+        filepath = os.path.join(component_path, filename)
+        try:
+            with open(filepath, "r") as f:
+                data = hcl2.load(f)
+        except Exception as e:
+            if verbose:
+                print(f"[WARN] Failed to parse {filepath}: {e}")
+            continue
+
+        if "data" in data:
+            terraform_remote_state = data["data"]
+            # Handle list of entries under 'data'
+            if isinstance(terraform_remote_state, list):
+                for entry in terraform_remote_state:
+                    if "terraform_remote_state" in entry:
+                        for dep_name, dep_data in entry["terraform_remote_state"].items():
+                            key = dep_data.get("config", {}).get("key")
                             if isinstance(key, str) and key.endswith("/terraform.state"):
                                 dep = key.split("/", 1)[0]
                                 deps.add(dep)
                                 if verbose:
-                                    print(f"[DEBUG] {os.path.basename(component_path)} depends on {dep} (from key = '{key}')")
-                except Exception as e:
-                    if verbose:
-                        print(f"[WARN] Could not parse {full_path}: {e}")
+                                    print(f"[DEBUG] {os.path.basename(component_path)} depends on {dep} from key='{key}'")
     return deps
 
-def build_graph(component_paths, verbose=False):
+def build_graph(component_dirs, verbose=False):
     graph = nx.DiGraph()
     name_to_path = {}
 
-    for path in component_paths:
+    for path in component_dirs:
         name = os.path.basename(os.path.normpath(path))
         name_to_path[name] = path
         graph.add_node(name)
@@ -48,30 +51,29 @@ def build_graph(component_paths, verbose=False):
     return graph
 
 def topological_groups(graph):
-    from collections import defaultdict
-
     in_deg = dict(graph.in_degree())
-    zero_deg = sorted([n for n, deg in in_deg.items() if deg == 0])
-    result = []
+    layers = []
 
+    zero_deg = sorted([n for n, d in in_deg.items() if d == 0])
     while zero_deg:
-        result.append(zero_deg)
+        layers.append(zero_deg)
         next_zero = []
         for node in zero_deg:
-            for child in sorted(graph.successors(node)):
-                in_deg[child] -= 1
-                if in_deg[child] == 0:
-                    next_zero.append(child)
-        zero_deg = next_zero
+            for succ in graph.successors(node):
+                in_deg[succ] -= 1
+                if in_deg[succ] == 0:
+                    next_zero.append(succ)
+        zero_deg = sorted(next_zero)
 
-    if any(deg > 0 for deg in in_deg.values()):
-        raise RuntimeError("Cycle detected")
-    return result
+    if any(d > 0 for d in in_deg.values()):
+        raise RuntimeError("Cycle detected!")
+
+    return layers
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("paths", nargs="+", help="Paths to component directories")
-    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("paths", nargs="+", help="List of component directories")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug output")
     args = parser.parse_args()
 
     graph = build_graph(args.paths, verbose=args.verbose)
