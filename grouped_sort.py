@@ -33,7 +33,7 @@ def extract_remote_state_deps(component_path, verbose=False):
                             if "terraform_remote_state" in entry:
                                 for dep_name, dep_data in entry["terraform_remote_state"].items():
                                     key = dep_data.get("config", {}).get("key")
-                                    if isinstance(key, str) and "/terraform.state" in key:
+                                    if isinstance(key, str) and "/terraform.tfstate" in key:
                                         dep = key.split("/", 1)[0]
                                         deps.add(dep)
                                         if verbose:
@@ -44,7 +44,7 @@ def extract_remote_state_deps(component_path, verbose=False):
                 try:
                     with open(filepath, "r") as f:
                         content = f.read()
-                    matches = re.findall(r'key\s*=\s*\"(\w+)/terraform\.state\"', content)
+                    matches = re.findall(r'key\s*=\s*\"(\w+)/terraform\.tfstate\"', content)
                     for dep in matches:
                         deps.add(dep)
                         if verbose:
