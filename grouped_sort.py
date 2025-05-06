@@ -106,8 +106,7 @@ def main():
             print(f"  {u} --> {v}")
 
     plan = topological_groups(graph)
-    if verbose:
-        print("DEBUG: Plan:", plan)
+    print("DEBUG: Plan:", plan)
 
     # This will maintain the group structure properly (as a list of lists)
     execution_plan = []
@@ -116,8 +115,7 @@ def main():
         execution_plan.append(group)  # Group itself is kept as a list of components
 
     print()
-    if verbose:
-        print("DEBUG: Execution Plan Groups:", plan)
+    print("DEBUG: Execution Plan Groups:", plan)
     print(yaml.dump({"execution_plan": execution_plan}, sort_keys=False))
 
 if __name__ == "__main__":
