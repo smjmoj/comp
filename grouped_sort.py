@@ -15,22 +15,32 @@ def extract_remote_state_deps(component_path, verbose=False):
                     with open(full_path, 'r') as f:
                         parsed = hcl2.load(f)
                         blocks = parsed if isinstance(parsed, list) else [parsed]
+
                         for block in blocks:
-                            if isinstance(block, dict) and "data" in block:
-                                data_block = block["data"]
-                                if "terraform_remote_state" in data_block:
-                                    for name, state_block in data_block["terraform_remote_state"].items():
-                                        config = state_block.get("config", {})
-                                        key = config.get("key")
-                                        if isinstance(key, str) and key.endswith("/terraform.state"):
-                                            dep_name = key.split("/", 1)[0]
-                                            deps.add(dep_name)
-                                            if verbose:
-                                                print(f"[DEBUG] Found dependency in {component_path}: {dep_name} via key='{key}'")
+                            if not isinstance(block, dict):
+                                continue
+                            if "data" in block and "terraform_remote_state" in block["data"]:
+                                tfrs_blocks = block["data"]["terraform_remote_state"]
+                                for name, attrs in tfrs_blocks.items():
+                                    key = None
+
+                                    # Try new style: config = { key = "..." }
+                                    if isinstance(attrs, dict):
+                                        config = attrs.get("config", {})
+                                        if isinstance(config, dict):
+                                            key = config.get("key")
+
+                                    if isinstance(key, str) and key.endswith("/terraform.state"):
+                                        dep_name = key.split("/", 1)[0]
+                                        deps.add(dep_name)
+                                        if verbose:
+                                            print(f"[DEBUG] Found dependency in {component_path}: {dep_name} via key='{key}'")
+
                 except Exception as e:
                     if verbose:
                         print(f"[WARN] Failed to parse {full_path}: {e}")
     return deps
+
 
 
 def build_dependency_graph(component_paths, verbose=False):
