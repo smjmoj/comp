@@ -91,13 +91,23 @@ def topological_groups(graph):
         raise RuntimeError("Cycle detected!")
 
     return layers
+def load_components_from_yaml(yaml_file):
+    """Load the list of components from the given YAML file."""
+    with open(yaml_file, 'r') as f:
+        data = yaml.safe_load(f)
+    return set(data.get('components', []))  # Use a set for easy filtering
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("paths", nargs="+", help="List of component directories")
+    parser.add_argument("--yaml", required=True, help="Path to the YAML file containing the component list")
     parser.add_argument("--verbose", action="store_true", help="Enable debug output")
     args = parser.parse_args()
 
+    # Load components from the YAML file
+    components_to_process = load_components_from_yaml(args.yaml)
+
+    # Build the graph and process only the required components
     graph = build_graph(args.paths, verbose=args.verbose)
 
     if args.verbose:
@@ -105,15 +115,20 @@ def main():
         for u, v in graph.edges:
             print(f"  {u} --> {v}")
 
+    # Generate the topological order of components
     plan = topological_groups(graph)
 
-    print()
-    execution_plan = [group for group in plan]
+    # Filter the plan to only include the specified components from the YAML file
+    filtered_plan = []
+    for group in plan:
+        filtered_group = [component for component in group if component in components_to_process]
+        if filtered_group:
+            filtered_plan.append(filtered_group)
 
-    # Print the output as a list of groups in square brackets
+    # Print the filtered plan in square brackets
     print("\nexecution_plan:")
-    for group in execution_plan:
+    for group in filtered_plan:
         print(f"  - [{', '.join(group)}]")
-        
+
 if __name__ == "__main__":
     main()
