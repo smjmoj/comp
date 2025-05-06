@@ -3,34 +3,56 @@ import hcl2
 import yaml
 import networkx as nx
 import argparse
+import re
 
 def extract_remote_state_deps(component_path, verbose=False):
     deps = set()
-    for filename in os.listdir(component_path):
-        if not filename.endswith(".tf"):
-            continue
-        filepath = os.path.join(component_path, filename)
-        try:
-            with open(filepath, "r") as f:
-                data = hcl2.load(f)
-        except Exception as e:
-            if verbose:
-                print(f"[WARN] Failed to parse {filepath}: {e}")
-            continue
+    for root, _, files in os.walk(component_path):
+        for filename in files:
+            if not filename.endswith(".tf"):
+                continue
+            filepath = os.path.join(root, filename)
+            found = False
 
-        if "data" in data:
-            terraform_remote_state = data["data"]
-            # Handle list of entries under 'data'
-            if isinstance(terraform_remote_state, list):
-                for entry in terraform_remote_state:
-                    if "terraform_remote_state" in entry:
-                        for dep_name, dep_data in entry["terraform_remote_state"].items():
-                            key = dep_data.get("config", {}).get("key")
-                            if isinstance(key, str) and key.endswith("/terraform.state"):
-                                dep = key.split("/", 1)[0]
-                                deps.add(dep)
-                                if verbose:
-                                    print(f"[DEBUG] {os.path.basename(component_path)} depends on {dep} from key='{key}'")
+            if verbose:
+                print(f"[CHECK] Scanning {filepath}")
+
+            try:
+                with open(filepath, "r") as f:
+                    data = hcl2.load(f)
+                found = True
+            except Exception as e:
+                if verbose:
+                    print(f"[WARN] Failed to parse {filepath} with hcl2: {e}")
+
+            if found:
+                if "data" in data:
+                    entries = data["data"]
+                    if isinstance(entries, list):
+                        for entry in entries:
+                            if "terraform_remote_state" in entry:
+                                for dep_name, dep_data in entry["terraform_remote_state"].items():
+                                    key = dep_data.get("config", {}).get("key")
+                                    if isinstance(key, str) and "/terraform.state" in key:
+                                        dep = key.split("/", 1)[0]
+                                        deps.add(dep)
+                                        if verbose:
+                                            print(f"[HCL2] {os.path.basename(component_path)} depends on {dep} (key='{key}')")
+
+            else:
+                # fallback to regex scan
+                try:
+                    with open(filepath, "r") as f:
+                        content = f.read()
+                    matches = re.findall(r'key\s*=\s*\"(\w+)/terraform\.state\"', content)
+                    for dep in matches:
+                        deps.add(dep)
+                        if verbose:
+                            print(f"[FALLBACK] {os.path.basename(component_path)} regex-detected dependency: {dep}")
+                except Exception as e:
+                    if verbose:
+                        print(f"[ERROR] Could not fallback scan {filepath}: {e}")
+
     return deps
 
 def build_graph(component_dirs, verbose=False):
