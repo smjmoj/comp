@@ -93,6 +93,14 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", action="store_true", help="Enable debug output")
 
     args = parser.parse_args()
+
     graph = build_dependency_graph(args.paths, verbose=args.verbose)
+
+    if args.verbose:
+        print("\n[INFO] Dependency graph edges:")
+        for u, v in graph.edges:
+            print(f"  {u} --> {v}")
+
     execution_layers = topological_grouping(graph)
+
     print(yaml.dump({"execution_plan": execution_layers}, sort_keys=False))
