@@ -1,9 +1,7 @@
 import os
-import sys
-import yaml
 import hcl2
+import yaml
 import networkx as nx
-from collections import deque
 
 def extract_remote_state_deps(component_path, verbose=False):
     deps = set()
@@ -21,40 +19,35 @@ def extract_remote_state_deps(component_path, verbose=False):
                                 continue
                             if "data" in block and "terraform_remote_state" in block["data"]:
                                 tfrs_blocks = block["data"]["terraform_remote_state"]
-                                for name, attrs in tfrs_blocks.items():
-                                    key = None
-
-                                    # Try new style: config = { key = "..." }
+                                for _, attrs in tfrs_blocks.items():
                                     if isinstance(attrs, dict):
                                         config = attrs.get("config", {})
-                                        if isinstance(config, dict):
-                                            key = config.get("key")
-
-                                    if isinstance(key, str) and key.endswith("/terraform.state"):
-                                        dep_name = key.split("/", 1)[0]
-                                        deps.add(dep_name)
-                                        if verbose:
-                                            print(f"[DEBUG] Found dependency in {component_path}: {dep_name} via key='{key}'")
+                                        key = config.get("key") if isinstance(config, dict) else None
+                                        if isinstance(key, str) and key.endswith("/terraform.state"):
+                                            dep_name = key.split("/", 1)[0]
+                                            deps.add(dep_name)
+                                            if verbose:
+                                                print(f"[DEBUG] {os.path.basename(component_path)} depends on {dep_name} (from key = '{key}')")
 
                 except Exception as e:
                     if verbose:
                         print(f"[WARN] Failed to parse {full_path}: {e}")
     return deps
 
-
-
 def build_dependency_graph(component_paths, verbose=False):
-    name_to_path = {os.path.basename(path.rstrip("/")): path for path in component_paths}
     graph = nx.DiGraph()
+    components = {}
 
-    for name, path in name_to_path.items():
+    for path in component_paths:
+        name = os.path.basename(os.path.normpath(path))
+        components[name] = path
         graph.add_node(name)
+
+    for name, path in components.items():
         deps = extract_remote_state_deps(path, verbose=verbose)
         for dep in deps:
-            if dep in name_to_path:
+            if dep in components:
                 graph.add_edge(dep, name)
-            elif verbose:
-                print(f"[WARN] Ignored unknown dependency '{dep}' in '{name}'")
 
     return graph
 
@@ -62,43 +55,41 @@ def topological_grouping(graph):
     from collections import defaultdict
 
     in_degree = dict(graph.in_degree())
-    zero_in = [n for n, deg in in_degree.items() if deg == 0]
+    zero_in = sorted([n for n, deg in in_degree.items() if deg == 0])
     grouped = []
 
     while zero_in:
-        grouped.append(sorted(zero_in))
-        next_zero_in = []
+        grouped.append(zero_in)
+        next_zero = []
 
         for node in zero_in:
-            for succ in graph.successors(node):
+            for succ in sorted(graph.successors(node)):
                 in_degree[succ] -= 1
                 if in_degree[succ] == 0:
-                    next_zero_in.append(succ)
+                    next_zero.append(succ)
 
-        zero_in = next_zero_in
+        zero_in = sorted(next_zero)
 
     if any(deg > 0 for deg in in_degree.values()):
-        raise RuntimeError("Cycle detected in dependencies.")
+        raise RuntimeError("Cycle detected")
 
     return grouped
-
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Group Terraform components by dependency order.")
-    parser.add_argument("paths", nargs="+", help="Component paths (e.g. ./components/vpc)")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("paths", nargs="+", help="List of component directories")
     parser.add_argument("--verbose", action="store_true", help="Enable debug output")
-
     args = parser.parse_args()
 
     graph = build_dependency_graph(args.paths, verbose=args.verbose)
 
     if args.verbose:
-        print("\n[INFO] Dependency graph edges:")
+        print("\n[INFO] Graph edges:")
         for u, v in graph.edges:
             print(f"  {u} --> {v}")
 
-    execution_layers = topological_grouping(graph)
-
-    print(yaml.dump({"execution_plan": execution_layers}, sort_keys=False))
+    execution_order = topological_grouping(graph)
+    print()
+    print(yaml.dump({"execution_plan": execution_order}, sort_keys=False))
