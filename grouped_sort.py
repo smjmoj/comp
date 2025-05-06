@@ -108,9 +108,12 @@ def main():
     plan = topological_groups(graph)
 
     print()
-    execution_plan = [group for group in plan]
+    execution_plan = []
+    for group in plan:
+        execution_plan.append(group)
 
+    # Ensure the plan output is a list of lists in YAML format
     print(yaml.dump({"execution_plan": execution_plan}, sort_keys=False, default_flow_style=False))
-
+    
 if __name__ == "__main__":
     main()
