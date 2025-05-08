@@ -1,9 +1,11 @@
 FROM python:3.10-slim
 
-WORKDIR /app
+WORKDIR /mnt
 
 COPY grouped_sort.py .
+COPY requirements.txt .
 
-RUN pip install networkx pyyaml python-hcl2
+RUN pip install -r requirements.txt
+
 
 ENTRYPOINT ["python", "grouped_sort.py"]

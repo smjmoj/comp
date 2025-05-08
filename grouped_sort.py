@@ -15,7 +15,7 @@ def extract_remote_state_deps(component_path, verbose=False):
             found = False
 
             if verbose:
-                print(f"[CHECK] Scanning {filepath}")
+                print(f"# [CHECK] Scanning {filepath}")
 
             try:
                 with open(filepath, "r") as f:
@@ -23,7 +23,7 @@ def extract_remote_state_deps(component_path, verbose=False):
                 found = True
             except Exception as e:
                 if verbose:
-                    print(f"[WARN] Failed to parse {filepath} with hcl2: {e}")
+                    print(f"# [WARN] Failed to parse {filepath} with hcl2: {e}")
 
             if found:
                 if "data" in data:
@@ -37,7 +37,7 @@ def extract_remote_state_deps(component_path, verbose=False):
                                         dep = key.split("/", 1)[0]
                                         deps.add(dep)
                                         if verbose:
-                                            print(f"[HCL2] {os.path.basename(component_path)} depends on {dep} (key='{key}')")
+                                            print(f"# [HCL2] {os.path.basename(component_path)} depends on {dep} (key='{key}')")
 
             else:
                 # fallback to regex scan
@@ -48,10 +48,10 @@ def extract_remote_state_deps(component_path, verbose=False):
                     for dep in matches:
                         deps.add(dep)
                         if verbose:
-                            print(f"[FALLBACK] {os.path.basename(component_path)} regex-detected dependency: {dep}")
+                            print(f"# [FALLBACK] {os.path.basename(component_path)} regex-detected dependency: {dep}")
                 except Exception as e:
                     if verbose:
-                        print(f"[ERROR] Could not fallback scan {filepath}: {e}")
+                        print(f"# [ERROR] Could not fallback scan {filepath}: {e}")
 
     return deps
 
@@ -111,9 +111,9 @@ def main():
     graph = build_graph(args.paths, verbose=args.verbose)
 
     if args.verbose:
-        print("\n[INFO] Graph edges:")
+        print("\n# [INFO] Graph edges:")
         for u, v in graph.edges:
-            print(f"  {u} --> {v}")
+            print(f"#  {u} --> {v}")
 
     # Generate the topological order of components
     plan = topological_groups(graph)
@@ -126,6 +126,8 @@ def main():
             filtered_plan.append(filtered_group)
 
     # Print the filtered plan in square brackets
+    print("\n---")
+    print("# Components in dependency order; parallel execution groups.")
     print("\nexecution_plan:")
     for group in filtered_plan:
         print(f"  - [{', '.join(group)}]")
