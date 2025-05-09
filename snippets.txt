@@ -1,0 +1,4 @@
+if ! command -v yq &> /dev/null; then
+    echo "Error: 'yq' is required to parse YAML. Install it via 'brew install yq' or 'sudo snap install yq'"
+    exit 1
+  fi
