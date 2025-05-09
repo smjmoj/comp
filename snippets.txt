@@ -2,3 +2,108 @@ if ! command -v yq &> /dev/null; then
     echo "Error: 'yq' is required to parse YAML. Install it via 'brew install yq' or 'sudo snap install yq'"
     exit 1
   fi
+
+
+  #!/bin/bash
+
+set -e
+
+# Configuration
+YAML_FILE="execution_plan.yaml"
+LOG_DIR="./logs"
+FAIL_FAST=false
+
+# Argument parsing
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --fail-fast)
+      FAIL_FAST=true
+      shift
+      ;;
+    --yaml)
+      YAML_FILE=$2
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+mkdir -p "$LOG_DIR"
+
+# Runs terraform commands in a subshell
+run_terraform() {
+  ENV_DIR=$1
+  LOG_FILE="$LOG_DIR/${ENV_DIR}.log"
+
+  (
+    echo "[$ENV_DIR] Starting at $(date)" | tee -a "$LOG_FILE"
+    cd "$ENV_DIR" || { echo "[$ENV_DIR] Directory not found" | tee -a "$LOG_FILE"; exit 1; }
+
+    echo "[$ENV_DIR] Running terraform init" | tee -a "$LOG_FILE"
+    terraform init >> "$LOG_FILE" 2>&1 || exit 1
+
+    echo "[$ENV_DIR] Running terraform plan" | tee -a "$LOG_FILE"
+    terraform plan >> "$LOG_FILE" 2>&1 || exit 1
+
+    echo "[$ENV_DIR] Running terraform apply" | tee -a "$LOG_FILE"
+    terraform apply -auto-approve >> "$LOG_FILE" 2>&1 || exit 1
+
+    echo "[$ENV_DIR] Completed at $(date)" | tee -a "$LOG_FILE"
+  ) &
+  echo "$!"  # Output the background process ID
+}
+
+# Parse batch count
+BATCH_COUNT=$(yq '.execution_plan | length' "$YAML_FILE")
+
+# Run each batch
+i=0
+while [ "$i" -lt "$BATCH_COUNT" ]; do
+  echo ""
+  echo "Starting batch $((i + 1))..."
+
+  DIRS=$(yq ".execution_plan[$i][]" "$YAML_FILE")
+  PIDS=""
+  PID_FILE="/tmp/tf_pids_$$.txt"
+  > "$PID_FILE"
+
+  for DIR in $DIRS; do
+    PID=$(run_terraform "$DIR")
+    echo "$PID:$DIR" >> "$PID_FILE"
+    PIDS="$PIDS $PID"
+  done
+
+  # Wait and check exit codes
+  BATCH_FAILED=0
+  for ENTRY in $(cat "$PID_FILE"); do
+    PID=$(echo "$ENTRY" | cut -d: -f1)
+    DIR=$(echo "$ENTRY" | cut -d: -f2)
+
+    if wait "$PID"; then
+      echo "[$DIR] completed successfully."
+    else
+      echo "[$DIR] failed."
+      BATCH_FAILED=1
+    fi
+  done
+
+  rm -f "$PID_FILE"
+
+  if [ "$BATCH_FAILED" -ne 0 ]; then
+    echo "Batch $((i + 1)) failed."
+    if [ "$FAIL_FAST" = true ]; then
+      echo "Fail-fast is enabled. Exiting."
+      exit 1
+    fi
+  else
+    echo "Batch $((i + 1)) completed successfully."
+  fi
+
+  i=$((i + 1))
+done
+
+echo ""
+echo "All batches completed."
